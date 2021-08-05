@@ -2,11 +2,11 @@
   "name": "wheelbot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.html",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
+  "type": "module",
   "license": "ISC",
   "dependencies": {
     "ammo.js": "0.0.10",
