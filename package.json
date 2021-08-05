@@ -6,11 +6,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "type": "module",
+  "main": "src/main.js",
   "license": "ISC",
   "dependencies": {
     "ammo.js": "0.0.10",
-    "babylonjs": "^4.2.0"
+    "babylonjs": "^4.2.0",
+    "dat-gui": "^0.5.0"
   },
   "devDependencies": {
     "@types/babylonjs": "^2.4.1"

@@ -1,43 +1,44 @@
-import Game from './game';
+const Game = require("./game");
 
 var canvas = document.getElementById("renderCanvas");
 
 var createDefaultEngine = function () {
-    return new BABYLON.Engine(canvas, true, {
-        preserveDrawingBuffer: true,
-        stencil: true,
-        disableWebGL2Support: false
-    });
+  return new BABYLON.Engine(canvas, true, {
+    preserveDrawingBuffer: true,
+    stencil: true,
+    disableWebGL2Support: false,
+  });
 };
 
 async function main() {
-    await Ammo();
+  await Ammo();
 
-    var asyncEngineCreation = async function () {
-        try {
-            return createDefaultEngine();
-        } catch (e) {
-            console.log("the available createEngine function failed. Creating the default engine instead");
-            return createDefaultEngine();
-        }
+  var asyncEngineCreation = async function () {
+    try {
+      return createDefaultEngine();
+    } catch (e) {
+      console.log(
+        "the available createEngine function failed. Creating the default engine instead"
+      );
+      return createDefaultEngine();
     }
+  };
 
-    window.engine = await asyncEngineCreation();
-    if (!window.engine) throw 'engine should not be null.';
+  window.engine = await asyncEngineCreation();
+  if (!window.engine) throw "engine should not be null.";
 
-    window.game = new Game(window.engine);
-    window.scene = window.game.scene;
+  window.game = new Game(window.engine);
+  window.scene = window.game.scene;
 
-    // Resize
-    window.addEventListener("resize", function () {
-        window.engine.resize();
-    });
+  // Resize
+  window.addEventListener("resize", function () {
+    window.engine.resize();
+  });
 
-    window.engine.runRenderLoop(function () {
-        if (scene && scene.activeCamera) {
-            scene.render();
-        }
-    });
-
+  window.engine.runRenderLoop(function () {
+    if (scene && scene.activeCamera) {
+      scene.render();
+    }
+  });
 }
-main()
+main();
