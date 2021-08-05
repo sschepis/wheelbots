@@ -96,7 +96,7 @@ export default class Game {
         this.setupVehicle();
 
        // Loot.createRandomLoot(this, 1);
-        Turret.createRandomTurret(this, this.groundMesh, 1);
+        Turret.createRandomTurret(this, 1);
     }
 
     onLoot() {

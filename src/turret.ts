@@ -1,204 +1,212 @@
-import Game from './game';
-import Axes from './axes';
+import Game from "./game";
+import Axes from "./axes";
+import { blurPixelShader } from "babylonjs/Shaders/blur.fragment";
+
+const Vector3 = BABYLON.Vector3;
+const PhysicsImpostor = BABYLON.PhysicsImpostor;
+const MeshBuilder = BABYLON.MeshBuilder;
+const Mesh = BABYLON.Mesh;
+const HingeJoint = BABYLON.HingeJoint;
+const StandardMaterial = BABYLON.StandardMaterial;
+const Color3 = BABYLON.Color3;
+const TransformNode = BABYLON.TransformNode;
 
 declare const Ammo: any;
 
 export default class Turret {
-    game;
-    scene;
-    position;
-    parentMesh;
+  game;
+  scene;
+  position;
+  parentMesh;
+
+  joint: any;
+  barrel: any;
+
+  rotationalAxis = new Vector3(0, 2, 0);
+  rotatingPivotPosition = new Vector3(0, 1, 0);
+  fixedPivotPosition = new Vector3(0, 0, 0);
+  centerPointPosition = new Vector3(0, 0, 1);
+
+  rotatingTransform;
+  fixedTransform;
+  centerpointTransform;
+
+  turretMaterials;
+
+  createBarrel() {
+    // create the tube for the turrel barrel
+    var path = [];
+    var segLength = 2;
+    var numSides = 18;
+    for (var i = 0; i < 2; i++) {
+      var z = i * segLength;
+      var y = 0;
+      var x = 0;
+      path.push(new Vector3(x, y, z));
+    }
+    // create the barrel from all paths
+    this.barrel = Mesh.CreateTube(
+      "barrel",
+      path,
+      0.2,
+      numSides,
+      null,
+      0,
+      this.scene
+    );
+    //this.barrel.position.z -= 1;
+    this.barrel.visibility = 0.7;
+    // the barrel's parent is the freely-rotating transform
+    this.barrel.parent = this.rotatingTransform;
+    // create the physics impostor
+    this.barrel.physicsImpostor = new PhysicsImpostor(
+      this.barrel,
+      PhysicsImpostor.BoxImpostor,
+      { mass: 1 }
+    );
+    return this.barrel;
+  }
+
+  createHingeJoint() {
+    // create a hinge joint from the main and connected
+    // pivots and axes so that the turret body can
+    // rotate around its axis when effected by external
+    // forces
+    this.joint = new HingeJoint({
+      mainPivot: this.rotatingPivotPosition,
+      connectedPivot: this.fixedPivotPosition,
+      mainAxis: this.rotatingPivotPosition,
+      connectedAxis: this.fixedPivotPosition,
+    });
+    this.fixedTransform.physicsImpostor = new PhysicsImpostor(
+      this.fixedTransform,
+      PhysicsImpostor.BoxImpostor,
+      { mass: 1000 }
+    );
+    this.rotatingTransform.physicsImpostor = new PhysicsImpostor(
+      this.rotatingTransform,
+      PhysicsImpostor.BoxImpostor,
+      { mass: 10 }
+    );
+    // add the main body and joint to the connected axle
+    this.fixedTransform.physicsImpostor.addJoint(
+      this.rotatingTransform.physicsImpostor,
+      this.joint
+    );
+    return this.joint;
+  }
+
+  constructor(game: Game, parentMesh: typeof Mesh, position: typeof Vector3) {
+    this.scene = game.scene;
+    this.game = game;
+    this.position = position;
+    this.parentMesh = parentMesh;
+
+    this.turretMaterials = Turret.createMaterials(this.scene);
+    this.fixedTransform = Axes.localAxes(this.scene, 5);
+    this.fixedTransform.parent = this.parentMesh;
+
+    // create the rotating transform node
+    this.rotatingTransform = Axes.localAxes(this.scene, 5);
+    this.centerpointTransform = new TransformNode("turret-centerpointTransform");
+    this.centerpointTransform.position = this.centerPointPosition.clone();
+
+    // create the hinge joint that lets the
+    // turret head rotate with the bidy
+    this.createHingeJoint();
+
+    // create the gun barrel tube and place it 
+    this.createBarrel();
     
-    dome;
-    joint;
-    barrel;
-    mainBody;
-    connectedAxle;
+    // enable the motor
+    //this.joint.setMotor(1, 100);
 
-    mainPivotPosition;
-    connectedPivotPosition;
-    startingPointPosition;
+    this.fire = this.fire.bind(this);
+    setInterval(() => this.fire(), 1000);
+  }
 
-    turretMaterials;
+  fire() {
+    // create a new bullet mesh
+    const bullet = new MeshBuilder.CreateSphere(
+      "bullet",
+      {
+        diameter: 0.25,
+        segments: 6,
+      },
+      this.scene
+    );
+    bullet.life = 0;
+    //bullet.position = this.barrel.getAbsolutePosition()
+    bullet.parent = this.barrel;
 
-    constructor(
-        game: Game,
-        parentMesh: BABYLON.Mesh,
-        position: BABYLON.Vector3) {
+    // set the bullet's physics impostor
+    bullet.physicsImpostor = new PhysicsImpostor(
+      bullet,
+      PhysicsImpostor.SphereImpostor,
+      { mass: 1, friction: 0.5, restition: 0.3 },
+      this.scene
+    )
 
-        this.scene = game.scene;
-        this.game = game;
-        this.position = position;
-        this.parentMesh = parentMesh;
+    // get the directional vector for the bullet
+    var dir = this.rotatingTransform.getAbsolutePosition().subtract(
+      this.centerpointTransform.getAbsolutePosition()
+    );
+      
+    const force = dir.scale(5);
+    force.y = 0;
 
-        this.turretMaterials = Turret.createMaterials(this.scene);
+    // fire it
+    bullet.physicsImpostor.applyImpulse(force, this.barrel.getAbsolutePosition());
+    bullet.life = 0
 
-    //    this.createDome();
+    bullet.step = () => {
+      bullet.life++;
+      if (bullet.life > 200 && bullet.physicsImpostor) {
+        bullet.physicsImpostor.dispose();
+        bullet.dispose();
+      }
+    };
 
-        this.mainBody = new BABYLON.MeshBuilder.CreateBox("mainBody", {width: 1.5, height: 1, depth: 1.5}, this.scene);
-        this.mainBody.visibility = 1;
-        let localMain = Axes.localAxes(this.scene, 5);
-        localMain.parent = this.mainBody;
+    bullet.physicsImpostor.onCollideEvent = (e:any, t:any) => {
+      console.log(e, t);
+    };
 
-        this.connectedAxle = new BABYLON.MeshBuilder.CreateBox("connectedAxis", {width: 0.5, height: 1, depth: 0.5}, this.scene);
-        this.connectedAxle.visibility = 1;
-        this.connectedAxle.position.y = 0.5;
-        let localConnected = Axes.localAxes(this.scene, 5);
-        localConnected.parent = this.connectedAxle;
+    this.scene.onBeforeRenderObservable.add(bullet.step);
+  }
 
-        this.mainPivotPosition = new BABYLON.Vector3(0, 2, 0);
-        this.connectedPivotPosition = new BABYLON.Vector3(0, 1, 0);
-        this.startingPointPosition = this.mainPivotPosition.add(this.connectedPivotPosition);
-        this.mainBody.position = this.connectedPivotPosition.add(new BABYLON.Vector3(0, this.connectedPivotPosition.y + 5, 0));
-        this.mainBody.physicsImpostor = new BABYLON.PhysicsImpostor(this.mainBody, BABYLON.PhysicsImpostor.BoxImpostor, {mass: 1});
-        this.connectedAxle.physicsImpostor = new BABYLON.PhysicsImpostor(this.connectedAxle, BABYLON.PhysicsImpostor.BoxImpostor, {mass: 0});
-          
-        var path = [];
-        var segLength = 1;
-        var numSides = 18;
-        
-        for(var i = 0; i < 2; i++) {
-            var z = i * segLength;
-            var y = 0;
-            var x = 0;
-            path.push(new BABYLON.Vector3(x, y, z + 0.5));
-            
-        }
-        this.barrel = BABYLON.Mesh.CreateTube("barrel", path, 0.2, numSides, null, 0, this.scene);
-        this.barrel.parent = this.mainBody;
-        this.barrel.position.x = 0;
-        this.barrel.position.y = 0;
-        this.barrel.physicsImpostor = new BABYLON.PhysicsImpostor(this.barrel, BABYLON.PhysicsImpostor.BoxImpostor, {mass: 0});
+  static createMaterials(scene: BABYLON.Scene): any {
+    const turretMaterials: any = {};
 
-        this.joint = new BABYLON.HingeJoint({  
-            mainPivot: this.mainPivotPosition ,
-            connectedPivot: this.connectedPivotPosition,
-            mainAxis: new BABYLON.Vector3(0, 1, 0),
-            connectedAxis: new BABYLON.Vector3(0, 2, 0),
-        });
-        
-        // add the main body and joint to the connected axle 
-        this.connectedAxle.physicsImpostor.addJoint(this.mainBody.physicsImpostor, this.joint);
-        this.joint.setMotor(1, 1000);
+    // purple material
+    turretMaterials["purple"] = new StandardMaterial("purple", scene);
+    turretMaterials["purple"].diffuseColor = new Color3(1, 0, 1);
 
-        this.fire = this.fire.bind(this);
-        setInterval(() => this.fire(), 1000);
+    // yellow material
+    turretMaterials["yellow"] = new StandardMaterial("yellow", scene);
+    turretMaterials["yellow"].diffuseColor = new Color3(1, 1, 0);
+
+    // black material
+    turretMaterials["black"] = new StandardMaterial("black", scene);
+    turretMaterials["black"].diffuseColor = new Color3(0, 0, 0);
+
+    return turretMaterials;
+  }
+
+  static createRandomTurret(
+    game: Game,
+    numTurrets: number
+  ): Turret[] {
+    const out: Turret[] = [];
+    let p = new Vector3();
+    let r = new Vector3();
+    for (let i = 0; i < numTurrets; i++) {
+      let m3 = Math.random() * 300 - 150 + 5;
+      p.set(5, 0, 5);
+      out.push(new Turret(game, game.groundMesh, p));
     }
-
-    fire() {
-        // vehicle geometry
-        var bullet = new Ammo.btBoxShape(new Ammo.btVector3(
-            0.1,
-            0.1,
-            0.1));
-
-        const pe = this.scene.getPhysicsEngine();
-        if (!pe) {
-            throw Error('cannot create');
-        }
-
-        // geometry transform
-        var transform = new Ammo.btTransform();
-        transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(
-            this.barrel.position.x,
-            this.barrel.position.y, 
-            this.barrel.position.z));
-
-        // motionstate and local inertia
-        var localInertia = new Ammo.btVector3(0, 0, 0);
-        bullet.calculateLocalInertia(1, localInertia);
-
-                // add body to world
-        pe.getPhysicsPlugin().world.addRigidBody(bullet);
-
-        var tbv30 = new Ammo.btVector3(0, 0, 1000);
-        bullet.applyImpulse(tbv30);
-
-        // bullet.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, 0, 1000), bullet.getAbsolutePosition()); 
-    }
-
-    static createMaterials(scene: BABYLON.Scene): any {
-
-        const turretMaterials: any = {};
-
-        // purple material
-        turretMaterials["purple"] = (new BABYLON.StandardMaterial("purple", scene));
-        turretMaterials["purple"].diffuseColor = new BABYLON.Color3(1, 0, 1);
-        
-        // yellow material
-        turretMaterials["yellow"] = new BABYLON.StandardMaterial("yellow", scene);
-        turretMaterials["yellow"].diffuseColor = new BABYLON.Color3(1, 1, 0);
-        
-        // black material
-        turretMaterials["black"] = new BABYLON.StandardMaterial("black", scene);
-        turretMaterials["black"].diffuseColor = new BABYLON.Color3(0, 0, 0);
-        
-        // turret material
-        turretMaterials["TurretDomeMaterial"] = new BABYLON.StandardMaterial("TurretDomeMaterial", scene);
-        turretMaterials["TurretDomeMaterial"].alpha = 0.8;
-        turretMaterials["TurretDomeMaterial"].emissiveColor = new BABYLON.Color3(0.8, 0.4, 0.5);
-        turretMaterials["TurretDomeMaterial"].diffuseColor = new BABYLON.Color3(0.8, 0.4, 0.5);
-        turretMaterials["TurretDomeMaterial"].ambientColor = new BABYLON.Color3(0, 0, 0);
-        
-        return turretMaterials;
-    }
-
-    createDome() {
-        // create the dome
-        this.dome = BABYLON.MeshBuilder.CreateSphere("turret", {
-            diameter: 3,
-            slice: 0.8,
-            sideOrientation:
-                BABYLON.Mesh.DOUBLESIDE
-        });
-
-        // action manager for turret
-        this.dome.actionManager = this.game.actionManager;
-        this.dome.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {   // when the turret is collided by vehicle
-                    trigger: BABYLON.ActionManager.OnIntersectionEnterTrigger,
-                    parameter: {
-                        mesh: this.game.vehicle.chassisMesh,
-                        usePreciseIntersection: true
-                    }
-                },
-                () => {
-                    // do nothing
-                }
-            )
-        );
-
-        // apply turret material
-        this.dome.material =  this.turretMaterials.TurretDomeMaterial;
-
-        // dome impostor for physics
-        this.dome.physicsImpostor = new BABYLON.PhysicsImpostor(
-            this.dome,
-            BABYLON.PhysicsImpostor.domeImpostor, {
-            mass: 5,
-            friction: 0,
-            restitution: 0
-        }, this.scene);
-
-        this.dome.position = this.position;
-    }
-
-    static createRandomTurret(game: Game, parentMesh: BABYLON.Mesh, numTurret: number): Turret[] {
-        const out: Turret[] = [];
-        let p = new BABYLON.Vector3();
-        let r = new BABYLON.Vector3();
-        for (let i = 0; i < numTurret; i++) {
-            let m3 = Math.random() * 300 - 150 + 5;
-            p.set(5, 0, 5);
-            out.push(new Turret(game, parentMesh, p));
-        }
-        return out;
-    }
-
-
+    return out;
+  }
 }
 
-	/*****************Local Axes****************************/
-    //Local Axes
+/*****************Local Axes****************************/
+//Local Axes
