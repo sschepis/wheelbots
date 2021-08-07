@@ -1,30 +1,17 @@
 import Vehicle from './vehicle';
 import Loot from './loot';
 import Turret from './turret';
+import RaceTrack from './racetrack';
 import Hazard from './hazard';
 
+declare const Ammo: any;
 
-var FRONT_LEFT = 0;
-var FRONT_RIGHT = 1;
-var BACK_LEFT = 2;
-var BACK_RIGHT = 3;
-
-declare type actions = {
-    accelerate: boolean,
-    brake: boolean,
-    right: boolean,
-    left: boolean
-};
-
-declare type keysActions = {
-    KeyW: string,
-    KeyS: string,
-    KeyA: string,
-    KeyD: string
-};
+var PointerEventTypes = BABYLON.PointerEventTypes;
+var Color3 = BABYLON.Color3;
+var Vector3 = BABYLON.Vector3;
 
 declare global {
-    interface Window { scene: any; }
+    interface Window { engine: any, scene: any; game: any; }
 }
 
 // declare namespace BABYLON {
@@ -79,6 +66,7 @@ export default class Game {
         this.engine = engine;
         this.canvas = document.getElementById("renderCanvas");        
         this.scene = new BABYLON.Scene(engine);
+        
         // Enable physics
         this.scene.enablePhysics(
             new BABYLON.Vector3(0, -10, 0), 
@@ -86,17 +74,49 @@ export default class Game {
         );
         this.actionManager = new BABYLON.ActionManager(this.scene);
 
+        this.preconfigure();
+
         this.setupCamera();
         this.setupLighting();
         this.setupGround();
         this.setupSkySphere();
 
+        //const racetrack = new RaceTrack(this, 10, new Vector3(20, 0, 0));
+
         //Hazard.createRandomHazard(this.scene, 10, this.groundMesh.material);
 
-        this.setupVehicle();
+        this.vehicle = new Vehicle(this);
 
        // Loot.createRandomLoot(this, 1);
-        Turret.createRandomTurret(this, 1);
+        //Turret.createRandomTurret(this, 1);
+    }
+
+    preconfigure() {
+        this.scene.onPointerObservable.add((pointerInfo: any) => {
+            switch (pointerInfo.type) {
+                case PointerEventTypes.POINTERDOWN:
+                    console.log("POINTER DOWN");
+                    break;
+                case PointerEventTypes.POINTERUP:
+                    console.log("POINTER UP");
+                    break;
+                case PointerEventTypes.POINTERMOVE:
+                    console.log("POINTER MOVE");
+                    break;
+                case PointerEventTypes.POINTERWHEEL:
+                    console.log("POINTER WHEEL");
+                    break;
+                case PointerEventTypes.POINTERPICK:
+                    console.log("POINTER PICK");
+                    break;
+                case PointerEventTypes.POINTERTAP:
+                    console.log("POINTER TAP");
+                    break;
+                case PointerEventTypes.POINTERDOUBLETAP:
+                    console.log("POINTER DOUBLE-TAP");
+                    break;
+            }
+        });
     }
 
     onLoot() {
@@ -115,8 +135,8 @@ export default class Game {
         skyMaterial.majorUnitFrequency = 6;
         skyMaterial.minorUnitVisibility = 0.43;
         skyMaterial.gridRatio = 0.5;
-        skyMaterial.mainColor = new BABYLON.Color3(0, 0.05, 0.2);
-        skyMaterial.lineColor = new BABYLON.Color3(0.07, 0.55, 0.55);	
+        skyMaterial.mainColor = new Color3(0, 0.05, 0.2);
+        skyMaterial.lineColor = new Color3(0.07, 0.55, 0.55);	
         skyMaterial.backFaceCulling = false;
         
         this.skySphere = BABYLON.Mesh.CreateSphere("skySphere", 200, 450, this.scene);
@@ -140,8 +160,8 @@ export default class Game {
         this.groundMesh.material.minorUnitVisibility = 0.45;
         this.groundMesh.material.gridRatio = 2;
         this.groundMesh.material.backFaceCulling = false;
-        this.groundMesh.material.mainColor =  new BABYLON.Color3(1, 1, 1);
-        this.groundMesh.material.lineColor = new BABYLON.Color3(1, 1, 1);
+        this.groundMesh.material.mainColor =  new Color3(1, 1, 1);
+        this.groundMesh.material.lineColor = new Color3(1, 1, 1);
         this.groundMesh.material.opacity = 0.99;
     }
 
@@ -149,108 +169,6 @@ export default class Game {
         // a light
         this.light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), this.scene);
         this.light.intensity = 0.7;
-    }
-
-    setupVehicle() {
-        this.vehicle = new Vehicle(this, new BABYLON.Quaternion());
-        
-        const actions: actions = {
-            accelerate: false,
-            brake: false,
-            right: false,
-            left: false
-        };
-        
-        const keysActions: keysActions = {
-            "KeyW": 'accelerate',
-            "KeyS": 'brake',
-            "KeyA": 'left',
-            "KeyD": 'right'
-        };
-
-        // keydown listener
-        window.addEventListener('keydown', (e: any) => {
-            if (keysActions[e.code]) {
-                actions[keysActions[e.code]] = true;
-            }
-        });
-
-        window.addEventListener('keyup', (e: any) => {
-            if (keysActions[e.code]) {
-                actions[keysActions[e.code]] = false;
-            }
-        });
-
-        this.scene.registerBeforeRender(() => {
-
-            if (this.vehicle.ready) {
-
-                var speed = this.vehicle.vehicle.getCurrentSpeedKmHour();
-                this.vehicle.breakingForce = 0;
-                this.vehicle.engineForce = 0;
-
-                if (actions.accelerate) {
-                    if (speed < -1) {
-                        this.vehicle.breakingForce = this.vehicle.maxBreakingForce;
-                    } else {
-                        this.vehicle.engineForce = this.vehicle.maxEngineForce;
-                    }
-
-                } else if (actions.brake) {
-                    if (speed > 1) {
-                        this.vehicle.breakingForce = this.vehicle.maxBreakingForce;
-                    } else {
-                        this.vehicle.engineForce = -this.vehicle.maxEngineForce;
-                    }
-                }
-
-                if (actions.right) {
-                    if (this.vehicle.vehicleSteering < this.vehicle.steeringClamp) {
-                        this.vehicle.vehicleSteering += this.vehicle.steeringIncrement;
-                    }
-
-                } else if (actions.left) {
-                    if (this.vehicle.vehicleSteering > -this.vehicle.steeringClamp) {
-                        this.vehicle.vehicleSteering -= this.vehicle.steeringIncrement;
-                    }
-
-                } else {
-                    this.vehicle.vehicleSteering = 0;
-                }
-
-                this.vehicle.vehicle.applyEngineForce(this.vehicle.engineForce, FRONT_LEFT);
-                this.vehicle.vehicle.applyEngineForce(this.vehicle.engineForce, FRONT_RIGHT);
-
-                this.vehicle.vehicle.setBrake(this.vehicle.breakingForce / 2, FRONT_LEFT);
-                this.vehicle.vehicle.setBrake(this.vehicle.breakingForce / 2, FRONT_RIGHT);
-                this.vehicle.vehicle.setBrake(this.vehicle.breakingForce, BACK_LEFT);
-                this.vehicle.vehicle.setBrake(this.vehicle.breakingForce, BACK_RIGHT);
-
-                this.vehicle.vehicle.setSteeringValue(this.vehicle.vehicleSteering, FRONT_LEFT);
-                this.vehicle.vehicle.setSteeringValue(this.vehicle.vehicleSteering, FRONT_RIGHT);
-
-
-                var tm, p, q, i;
-                var n = this.vehicle.vehicle.getNumWheels();
-                for (i = 0; i < n; i++) {
-                    this.vehicle.vehicle.updateWheelTransform(i, true);
-                    tm = this.vehicle.vehicle.getWheelTransformWS(i);
-                    p = tm.getOrigin();
-                    q = tm.getRotation();
-                    this.vehicle.wheelMeshes[i].position.set(p.x(), p.y(), p.z());
-                    this.vehicle.wheelMeshes[i].rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
-                    this.vehicle.wheelMeshes[i].rotate(BABYLON.Axis.Z, Math.PI / 2);
-                }
-
-                tm = this.vehicle.vehicle.getChassisWorldTransform();
-                p = tm.getOrigin();
-                q = tm.getRotation();
-                this.vehicle.chassisMesh.position.set(p.x(), p.y(), p.z());
-                this.vehicle.chassisMesh.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
-                this.vehicle.chassisMesh.rotate(BABYLON.Axis.X, Math.PI);
-
-            }
-        });
     }
 
 }

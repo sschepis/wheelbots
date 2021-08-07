@@ -1,9 +1,47 @@
 import Game from './game';
 
+const Vector3 = BABYLON.Vector3;
+const PhysicsImpostor = BABYLON.PhysicsImpostor;
+const MeshBuilder = BABYLON.MeshBuilder;
+const Mesh = BABYLON.Mesh;
+const HingeJoint = BABYLON.HingeJoint;
+const StandardMaterial = BABYLON.StandardMaterial;
+const Color3 = BABYLON.Color3;
+const Scene = BABYLON.Scene;
+const ActionManager = BABYLON.ActionManager;
+const TransformNode = BABYLON.TransformNode;
+const ExecuteCodeAction = BABYLON.ExecuteCodeAction;
+
 var FRONT_LEFT = 0;
 var FRONT_RIGHT = 1;
 var BACK_LEFT = 2;
 var BACK_RIGHT = 3;
+
+declare type actions = {
+    accelerate: boolean,
+    brake: boolean,
+    right: boolean,
+    left: boolean,
+    up: boolean,
+    down: boolean,
+    lside: boolean,
+    rside: boolean,
+    shoot: boolean,
+    slick: boolean,
+};
+
+declare type keysActions = {
+    KeyW: string,
+    KeyS: string,
+    KeyA: string,
+    KeyD: string,
+    KeyI: string,
+    KeyK: string,
+    KeyJ: string,
+    KeyL: string,
+    KeyM: string,
+    KeyN: string
+};
 
 declare const Ammo: any;
 declare namespace BABYLON {
@@ -25,7 +63,7 @@ declare namespace BABYLON {
     class Scene {
         getPhysicsEngine(): any;
         activeCamera: any;
-        registerBeforeRender(cb:any): any;
+        registerBeforeRender(cb: any): any;
     }
     class Texture {
         constructor(a: string, b: Scene);
@@ -82,6 +120,11 @@ export default class Vehicle {
     rollInfluence = 1.0;
     vehicleMass = 100;
 
+    frontLeftBumper;
+    frontRightBumper;
+    rearLeftBumper;
+    rearRightBumper;
+
     steeringIncrement = 0.01;
     steeringClamp = 0.2;
     maxEngineForce = 500;
@@ -110,14 +153,17 @@ export default class Vehicle {
     vehicle;
     tuning;
     trans;
+    reticle;
 
     ready;
 
-    constructor(game: Game, quat: BABYLON.Quaternion) {
+    constructor(game: Game) {
 
         this.canvas = document.getElementById("renderCanvas");
         this.game = game;
         this.scene = game.scene;
+
+        var quat = new BABYLON.Quaternion();
 
         const pe = this.scene.getPhysicsEngine();
         if (!pe) {
@@ -148,18 +194,6 @@ export default class Vehicle {
 
         // chassis mesh
         this.chassisMesh = this.createChassisMesh();
-        this.chassisMesh.actionManager = game.actionManager;
-        this.chassisMesh.actionManager.registerAction(
-            new BABYLON.ExecuteCodeAction(
-                {
-                    trigger: BABYLON.ActionManager.OnLeftPickTrigger,
-                },
-                () => { 
-                    var tbv30 = new Ammo.btVector3(0, 1000, 0);
-                    this.body.applyImpulse(tbv30)
-                 }
-            )
-        );
 
         // mass and position
         var massOffset = new Ammo.btVector3(0, 0.4, 0);
@@ -170,8 +204,54 @@ export default class Vehicle {
         // ammo.js geometry
         var compound = new Ammo.btCompoundShape();
         compound.addChildShape(transform2, this.geometry);
+        
+        // get the chassis world transform
+        var p = transform2.getOrigin();
+        var q = transform2.getRotation();
 
-        // ammo.js rigid body
+        // four bumpers, mostly to help with positioning
+        const bumpers = [0, 1, 2, 3];
+        bumpers.map((b) => MeshBuilder.CreateBox("bumper", {
+            height: 0.7,
+            width: .1,
+            depth: .1
+        })).forEach((bumper: any, i:any) => {
+            bumper.position.set(
+                i == 1 || i == 2 ? p.x() + 1.1 : -p.x()-1.1,
+                p.y() - ( i == 1 || i == 2 ? this.wheelAxisHeightFront : this.wheelAxisHeightBack ),
+                i == 0 || i == 1 ? p.z() + 2.1 : -p.z()-2.1
+            );
+            bumper.physicsImpostor = new PhysicsImpostor(
+                this.reticle,
+                PhysicsImpostor.Box,
+                { mass: 0.1, friction: 0.5, restition: 1 },
+                this.scene
+            )
+            bumper.rotationQuaternion = new BABYLON.Quaternion;
+            bumper.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
+            bumper.rotate(BABYLON.Axis.X, Math.PI);
+            bumper.parent = this.chassisMesh;
+        });
+    
+        // reticle / front windshield
+        this.reticle = MeshBuilder.CreateBox("reticle", {
+            height: 2,
+            width: 2,
+            depth: .1
+        }, this.scene);
+        this.reticle.parent = this.chassisMesh;
+        this.reticle.physicsImpostor = new PhysicsImpostor(
+            this.reticle,
+            PhysicsImpostor.Box,
+            { mass: 0.1, friction: 0.5, restition: 1 },
+            this.scene
+        )
+        this.reticle.rotationQuaternion = new BABYLON.Quaternion;
+        this.reticle.visibility = 0.1;
+        this.reticle.position.set(q.x(), q.y() - 0.5, q.z() - 2, q.w());
+        this.reticle.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
+        this.reticle.rotate(BABYLON.Axis.X, Math.PI);
+
         this.body = new Ammo.btRigidBody(new Ammo.btRigidBodyConstructionInfo(
             this.vehicleMass,
             this.motionState,
@@ -200,9 +280,9 @@ export default class Vehicle {
                 this.wheelAxisHeightFront,
                 this.wheelAxisFrontPosition
             ),
-        this.wheelRadiusFront,
-        this.wheelWidthFront,
-        FRONT_LEFT);
+            this.wheelRadiusFront,
+            this.wheelWidthFront,
+            FRONT_LEFT);
 
         // wheel 2
         this.addWheel(true, new Ammo.btVector3(
@@ -210,9 +290,9 @@ export default class Vehicle {
             this.wheelAxisHeightFront,
             this.wheelAxisFrontPosition
         ),
-        this.wheelRadiusFront,
-        this.wheelWidthFront,
-        FRONT_RIGHT);
+            this.wheelRadiusFront,
+            this.wheelWidthFront,
+            FRONT_RIGHT);
 
         // wheel 3
         this.addWheel(false, new Ammo.btVector3(
@@ -220,9 +300,9 @@ export default class Vehicle {
             this.wheelAxisHeightBack,
             this.wheelAxisPositionBack
         ),
-        this.wheelRadiusBack,
-        this.wheelWidthBack,
-        BACK_LEFT);
+            this.wheelRadiusBack,
+            this.wheelWidthBack,
+            BACK_LEFT);
 
         // wheel 4
         this.addWheel(false, new Ammo.btVector3(
@@ -230,12 +310,14 @@ export default class Vehicle {
             this.wheelAxisHeightBack,
             this.wheelAxisPositionBack
         ),
-        this.wheelRadiusBack,
-        this.wheelWidthBack,
-        BACK_RIGHT);
-        
+            this.wheelRadiusBack,
+            this.wheelWidthBack,
+            BACK_RIGHT);
+
         // vehicle is ready
         this.ready = true;
+        
+        this.setupVehicle();
     }
 
 
@@ -272,10 +354,10 @@ export default class Vehicle {
     }
 
     addWheel(
-        isFront: boolean, 
-        positionVector: BABYLON.Vector3, 
-        wheelRadius: number, 
-        wheelThickness: number, 
+        isFront: boolean,
+        positionVector: BABYLON.Vector3,
+        wheelRadius: number,
+        wheelThickness: number,
         index: number) {
 
         // wheel basics. Not so basic
@@ -298,7 +380,7 @@ export default class Vehicle {
 
         // add to meshes
         this.wheelMeshes[index] = this.createWheelMesh(wheelRadius * 2, wheelThickness);
-
+        return wheelInfo
     }
 
     createWheelMesh(diameter: number, width: number) {
@@ -331,4 +413,237 @@ export default class Vehicle {
         return wheelMesh;
     }
 
+
+    shoot() {
+        // create a new bullet mesh
+        const bullet = new MeshBuilder.CreateSphere(
+            "bullet",
+            {
+                diameter: 0.25,
+                segments: 6,
+            },
+            this.scene
+        );
+
+        bullet.life = 0;
+        bullet.rotationQuaternion = new BABYLON.Quaternion();
+        bullet.position = this.chassisMesh.getAbsolutePosition().clone();
+        const retPos = this.reticle.getAbsolutePosition();
+
+        // set the bullet's physics impostor
+        bullet.physicsImpostor = new PhysicsImpostor(
+            bullet,
+            PhysicsImpostor.SphereImpostor,
+            { mass: 0.1, friction: 0.5, restition: 0.3 },
+            this.scene
+        )
+
+        const rap = retPos.subtract(bullet.getAbsolutePosition());
+        rap.y = 1;
+        rap.scaleInPlace(3);
+
+        // fire it
+        bullet.physicsImpostor.applyImpulse(rap, bullet.getAbsolutePosition());
+        bullet.life = 0
+
+        var tbv30 = new Ammo.btVector3(-2 * rap.x, rap.y, -2 * rap.z);
+        this.body.applyImpulse(tbv30);
+
+        bullet.step = () => {
+            bullet.life++;
+            if (bullet.life > 200 && bullet.physicsImpostor) {
+                bullet.physicsImpostor.dispose();
+                bullet.dispose();
+            }
+        };
+
+        bullet.physicsImpostor.onCollideEvent = (e: any, t: any) => {
+            console.log(e, t);
+        };
+
+        this.scene.onBeforeRenderObservable.add(bullet.step);
+    }
+
+    poop() {
+        const poop = new MeshBuilder.CreateBox(
+            "poop",
+            {
+                width: this.chassisWidth,
+                depth: this.chassisLength,
+                height: 0.01
+            },
+            this.scene
+        );
+        poop.position = this.chassisMesh.getAbsolutePosition();
+        poop.position.y = 0;
+        poop.parent = this.game.groundMesh;
+    }
+
+    setupVehicle() {
+
+        const actions: actions = {
+            accelerate: false,
+            brake: false,
+            right: false,
+            left: false,
+            up: false,
+            down: false,
+            lside: false,
+            rside: false,
+            shoot: false,
+            slick: false,
+        };
+
+        const keysActions: keysActions = {
+            "KeyW": 'accelerate',
+            "KeyS": 'brake',
+            "KeyA": 'left',
+            "KeyD": 'right',
+            "KeyI": 'up',
+            "KeyK": 'down',
+            "KeyJ": 'lside',
+            "KeyL": 'rside',
+            "KeyM": 'shoot',
+            "KeyN": 'slick',
+        };
+
+        // keydown listener
+        window.addEventListener('keydown', (e: any) => {
+            if (keysActions[e.code]) {
+                actions[keysActions[e.code]] = true;
+            }
+        });
+
+        window.addEventListener('keyup', (e: any) => {
+            if (keysActions[e.code]) {
+                actions[keysActions[e.code]] = false;
+            }
+        });
+
+        this.scene.registerBeforeRender(() => {
+
+            if (this.ready) {
+
+                var speed = this.vehicle.getCurrentSpeedKmHour();
+                this.breakingForce = 0;
+                this.engineForce = 0;
+                var pos = this.chassisMesh.getAbsolutePosition();
+
+                if (actions.accelerate) {
+                    if (Math.abs(pos.y) > 1) {
+                        var tbv30 = new Ammo.btVector3(0, 0, 50);
+                        this.body.applyImpulse(tbv30);
+                        actions.accelerate = false;
+                    } else {
+                        if (speed < -1) {
+                            this.breakingForce = this.maxBreakingForce;
+                        } else {
+                            this.engineForce = this.maxEngineForce;
+                        }
+                    }
+
+                } else if (actions.brake) {
+                    if (Math.abs(pos.y) > (1) {
+                        var tbv30 = new Ammo.btVector3(0, 0, -50);
+                        this.body.applyImpulse(tbv30);
+                        actions.brake = false;
+                    } else {
+                        if (speed > 1) {
+                            this.breakingForce = this.maxBreakingForce;
+                        } else {
+                            this.engineForce = -this.maxEngineForce;
+                        }
+                    }
+                }
+
+                if (actions.right) {
+                    if (Math.abs(pos.y) > (1)) {
+                        
+                    }
+                    else {
+                        if (this.vehicleSteering < this.steeringClamp) {
+                            this.vehicleSteering += this.steeringIncrement;
+                        }
+                    }
+                } else if (actions.left) {
+                    if (Math.abs(pos.y) > (1)) {
+                        // var tbv30 = new Ammo.btVector3(-5, 0, 0);
+                        // this.backLeftWheel.applyImpulse(tbv30);
+                        // var tbv30 = new Ammo.btVector3(5, 0, 0);
+                        // this.frontRightWheel.applyImpulse(tbv30);
+                        // actions.left = false;
+                    }
+                    else {
+                        if (this.vehicleSteering > -this.steeringClamp) {
+                            this.vehicleSteering -= this.steeringIncrement;
+                        }
+                    }
+                } else {
+                    this.vehicleSteering = 0;
+                }
+
+                if (actions.lside) {
+                    var tbv30 = new Ammo.btVector3(50, 0, 0);
+                    this.body.applyImpulse(tbv30);
+                    actions.lside = false;
+
+                } else if (actions.rside) {
+                    var tbv30 = new Ammo.btVector3(-50, 0, 0);
+                    this.body.applyImpulse(tbv30);
+                    actions.rside = false;
+                }
+                if (actions.up) {
+                    var tbv30 = new Ammo.btVector3(0, 50, 0);
+                    this.body.applyImpulse(tbv30);
+                    actions.up = false;
+
+                } else if (actions.down) {
+                    var tbv30 = new Ammo.btVector3(0, -50, 0);
+                    this.body.applyImpulse(tbv30);
+                    actions.down = false;
+                }
+
+                if (actions.shoot) {
+                    this.shoot();
+                    actions.shoot = false;
+                } else if (actions.slick) {
+                    this.poop();
+                    actions.slick = false;
+                }
+
+                this.vehicle.applyEngineForce(this.engineForce, FRONT_LEFT);
+                this.vehicle.applyEngineForce(this.engineForce, FRONT_RIGHT);
+
+                this.vehicle.setBrake(this.breakingForce / 2, FRONT_LEFT);
+                this.vehicle.setBrake(this.breakingForce / 2, FRONT_RIGHT);
+                this.vehicle.setBrake(this.breakingForce, BACK_LEFT);
+                this.vehicle.setBrake(this.breakingForce, BACK_RIGHT);
+
+                this.vehicle.setSteeringValue(this.vehicleSteering, FRONT_LEFT);
+                this.vehicle.setSteeringValue(this.vehicleSteering, FRONT_RIGHT);
+
+
+                var tm, p, q, i;
+                var n = this.vehicle.getNumWheels();
+                for (i = 0; i < n; i++) {
+                    this.vehicle.updateWheelTransform(i, true);
+                    tm = this.vehicle.getWheelTransformWS(i);
+                    p = tm.getOrigin();
+                    q = tm.getRotation();
+                    this.wheelMeshes[i].position.set(p.x(), p.y(), p.z());
+                    this.wheelMeshes[i].rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
+                    this.wheelMeshes[i].rotate(BABYLON.Axis.Z, Math.PI / 2);
+                }
+
+                tm = this.vehicle.getChassisWorldTransform();
+                p = tm.getOrigin();
+                q = tm.getRotation();
+
+                this.chassisMesh.position.set(p.x(), p.y(), p.z());
+                this.chassisMesh.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
+                this.chassisMesh.rotate(BABYLON.Axis.X, Math.PI);
+
+            }
+        });
+    }
 }

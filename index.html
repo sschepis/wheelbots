@@ -4,6 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Wheelbots</title>
+
+    <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
     <script src="https://preview.babylonjs.com/ammo.js"></script>
     <script src="https://preview.babylonjs.com/cannon.js"></script>
     <script src="https://preview.babylonjs.com/Oimo.js"></script>
@@ -16,6 +18,7 @@
     <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
     <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
     <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+    
     <style>
         body,
         html {
@@ -34,8 +37,8 @@
     </style>
 </head>
 
-<body> <canvas id="renderCanvas"></canvas>
-    <script src="src/main.js"></script>
+<body> <canvas id="renderCanvas" touch-action="none"></canvas>
+<script src="src/main.ts"></script>
 </body>
 
 </html>
