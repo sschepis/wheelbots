@@ -95,25 +95,18 @@ export default class Game {
         this.scene.onPointerObservable.add((pointerInfo: any) => {
             switch (pointerInfo.type) {
                 case PointerEventTypes.POINTERDOWN:
-                    console.log("POINTER DOWN");
                     break;
                 case PointerEventTypes.POINTERUP:
-                    console.log("POINTER UP");
                     break;
                 case PointerEventTypes.POINTERMOVE:
-                    console.log("POINTER MOVE");
                     break;
                 case PointerEventTypes.POINTERWHEEL:
-                    console.log("POINTER WHEEL");
                     break;
                 case PointerEventTypes.POINTERPICK:
-                    console.log("POINTER PICK");
                     break;
                 case PointerEventTypes.POINTERTAP:
-                    console.log("POINTER TAP");
                     break;
                 case PointerEventTypes.POINTERDOUBLETAP:
-                    console.log("POINTER DOUBLE-TAP");
                     break;
             }
         });

@@ -43,6 +43,19 @@ declare type keysActions = {
     KeyN: string
 };
 
+declare type dpadActions = {
+    up: string,
+    down: string,
+    left: string,
+    right: string,
+    y: string,
+    a: string,
+    x: string,
+    b: string,
+    lb: string,
+    rb: string
+};
+
 declare const Ammo: any;
 declare namespace BABYLON {
     class Quaternion {
@@ -120,16 +133,14 @@ export default class Vehicle {
     rollInfluence = 1.0;
     vehicleMass = 100;
 
-    frontLeftBumper;
-    frontRightBumper;
-    rearLeftBumper;
-    rearRightBumper;
+    bumpers :any;
 
     steeringIncrement = 0.01;
     steeringClamp = 0.2;
     maxEngineForce = 500;
     maxBreakingForce = 10;
     incEngine = 10.0;
+    valveLock = 0;
 
     engineForce = 0;
     vehicleSteering = 0;
@@ -142,6 +153,10 @@ export default class Vehicle {
     scene: BABYLON.Scene;
     canvas;
     body;
+    trail: any;
+    dPadState: any;
+    buttonState: any;
+    gamepadManager: any;
 
     game;
     geometry;
@@ -180,6 +195,19 @@ export default class Vehicle {
             this.chassisWidth * .5,
             this.chassisHeight * .5,
             this.chassisLength * .5));
+        
+        this.dPadState = {
+            'up': false,
+            'down': false,
+            'left': false,
+            'right': false
+        };
+        this.buttonState = {
+            'y': false,
+            'x': false,
+            'b': false,
+            'a': false
+        };
 
         // geometry transform
         this.transform = new Ammo.btTransform();
@@ -210,23 +238,26 @@ export default class Vehicle {
         var q = transform2.getRotation();
 
         // four bumpers, mostly to help with positioning
-        const bumpers = [0, 1, 2, 3];
-        bumpers.map((b) => MeshBuilder.CreateBox("bumper", {
+        this.bumpers = [0, 1, 2, 3];
+        this.bumpers.map((b:any) => MeshBuilder.CreateBox("bumper", {
             height: 0.7,
             width: .1,
             depth: .1
         })).forEach((bumper: any, i:any) => {
+            // set the bumper position
             bumper.position.set(
                 i == 1 || i == 2 ? p.x() + 1.1 : -p.x()-1.1,
                 p.y() - ( i == 1 || i == 2 ? this.wheelAxisHeightFront : this.wheelAxisHeightBack ),
                 i == 0 || i == 1 ? p.z() + 2.1 : -p.z()-2.1
             );
+            // add impostors, because why not make it extra physicsy 
             bumper.physicsImpostor = new PhysicsImpostor(
                 this.reticle,
                 PhysicsImpostor.Box,
                 { mass: 0.1, friction: 0.5, restition: 1 },
                 this.scene
             )
+            // this is ridicuclous
             bumper.rotationQuaternion = new BABYLON.Quaternion;
             bumper.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
             bumper.rotate(BABYLON.Axis.X, Math.PI);
@@ -240,18 +271,21 @@ export default class Vehicle {
             depth: .1
         }, this.scene);
         this.reticle.parent = this.chassisMesh;
+        // corporeal windshields work well as shields
         this.reticle.physicsImpostor = new PhysicsImpostor(
             this.reticle,
             PhysicsImpostor.Box,
             { mass: 0.1, friction: 0.5, restition: 1 },
             this.scene
         )
+        // more ridiculous reorientation
         this.reticle.rotationQuaternion = new BABYLON.Quaternion;
         this.reticle.visibility = 0.1;
         this.reticle.position.set(q.x(), q.y() - 0.5, q.z() - 2, q.w());
         this.reticle.rotationQuaternion.set(q.x(), q.y(), q.z(), q.w());
         this.reticle.rotate(BABYLON.Axis.X, Math.PI);
 
+        // make the compound body from vehicle bits
         this.body = new Ammo.btRigidBody(new Ammo.btRigidBodyConstructionInfo(
             this.vehicleMass,
             this.motionState,
@@ -273,51 +307,60 @@ export default class Vehicle {
         this.trans = this.vehicle.getChassisWorldTransform();
         this.physicsWorld.addAction(this.vehicle);
 
-        // wheel 1
-        this.addWheel(true,
-            new Ammo.btVector3(
-                this.wheelHalfTrackFront,
-                this.wheelAxisHeightFront,
-                this.wheelAxisFrontPosition
-            ),
-            this.wheelRadiusFront,
-            this.wheelWidthFront,
-            FRONT_LEFT);
+        // let;s make some wheels for driving around on
+        [0, 1, 2, 3].forEach((wheelNum: number) => {
+            var wheelAxisHeight;
+            var wheelHalfTrack;
+            var wheelAxisPosition;
+            var wheelRadius;
+            var wheelWidth;
+            switch(wheelNum) {
+                case 0:
+                    wheelAxisHeight = this.wheelAxisHeightFront;
+                    wheelHalfTrack = this.wheelHalfTrackFront;
+                    wheelAxisPosition = this.wheelAxisFrontPosition;
+                    wheelRadius = this.wheelRadiusFront;
+                    wheelWidth = this.wheelWidthFront;
+                    break;
+                case 1:
+                    wheelAxisHeight = this.wheelAxisHeightFront;
+                    wheelHalfTrack = -this.wheelHalfTrackFront;
+                    wheelAxisPosition = this.wheelAxisFrontPosition;
+                    wheelRadius = this.wheelRadiusFront;
+                    wheelWidth = this.wheelWidthFront;
+                    break;
+                case 2:
+                    wheelAxisHeight = this.wheelAxisHeightBack;
+                    wheelHalfTrack = -this.wheelHalfTrackBack;
+                    wheelAxisPosition = this.wheelAxisPositionBack;
+                    wheelRadius = this.wheelRadiusBack;
+                    wheelWidth = this.wheelWidthBack;
+                    break;
+                case 3:
+                    wheelAxisHeight = this.wheelAxisHeightBack;
+                    wheelHalfTrack = this.wheelHalfTrackBack;
+                    wheelAxisPosition = this.wheelAxisPositionBack;
+                    wheelRadius = this.wheelRadiusBack;
+                    wheelWidth = this.wheelWidthBack;
+                    break;                    
+            }
+            // ok now we make the wheel 
+            this.addWheel(wheelNum === 0 || wheelNum === 1, new Ammo.btVector3(
+                    wheelHalfTrack,
+                    wheelAxisHeight,
+                    wheelAxisPosition
+                ),
+                wheelRadius || 0,
+                wheelWidth || 0,
+                wheelNum); 
+        });
 
-        // wheel 2
-        this.addWheel(true, new Ammo.btVector3(
-            -this.wheelHalfTrackFront,
-            this.wheelAxisHeightFront,
-            this.wheelAxisFrontPosition
-        ),
-            this.wheelRadiusFront,
-            this.wheelWidthFront,
-            FRONT_RIGHT);
-
-        // wheel 3
-        this.addWheel(false, new Ammo.btVector3(
-            -this.wheelHalfTrackBack,
-            this.wheelAxisHeightBack,
-            this.wheelAxisPositionBack
-        ),
-            this.wheelRadiusBack,
-            this.wheelWidthBack,
-            BACK_LEFT);
-
-        // wheel 4
-        this.addWheel(false, new Ammo.btVector3(
-            this.wheelHalfTrackBack,
-            this.wheelAxisHeightBack,
-            this.wheelAxisPositionBack
-        ),
-            this.wheelRadiusBack,
-            this.wheelWidthBack,
-            BACK_RIGHT);
 
         // vehicle is ready
         this.ready = true;
         
         this.setupVehicle();
+
     }
 
 
@@ -424,8 +467,11 @@ export default class Vehicle {
             },
             this.scene
         );
-
+        
+        // he has 200 lives to live
         bullet.life = 0;
+
+        // let's get the bullet into the right orientation
         bullet.rotationQuaternion = new BABYLON.Quaternion();
         bullet.position = this.chassisMesh.getAbsolutePosition().clone();
         const retPos = this.reticle.getAbsolutePosition();
@@ -437,18 +483,22 @@ export default class Vehicle {
             { mass: 0.1, friction: 0.5, restition: 0.3 },
             this.scene
         )
-
+        
+        // create a directional force vector so the 
+        // shooty-thing can go bang where we want it to 
         const rap = retPos.subtract(bullet.getAbsolutePosition());
         rap.y = 1;
         rap.scaleInPlace(3);
 
-        // fire it
+        // fire our bang stick (heheh)
         bullet.physicsImpostor.applyImpulse(rap, bullet.getAbsolutePosition());
         bullet.life = 0
 
+        // make an ammo vector to shoot the bullet. Isn't it ironic
         var tbv30 = new Ammo.btVector3(-2 * rap.x, rap.y, -2 * rap.z);
         this.body.applyImpulse(tbv30);
 
+        // let's make the bullets dissapear after a bit to keep things clean
         bullet.step = () => {
             bullet.life++;
             if (bullet.life > 200 && bullet.physicsImpostor) {
@@ -457,26 +507,40 @@ export default class Vehicle {
             }
         };
 
-        bullet.physicsImpostor.onCollideEvent = (e: any, t: any) => {
-            console.log(e, t);
-        };
+        // for now just say owie in the console
+        bullet.physicsImpostor.onCollideEvent = (e: any, t: any) => console.log(e, t));
 
+        // add to scene
         this.scene.onBeforeRenderObservable.add(bullet.step);
     }
 
     poop() {
-        const poop = new MeshBuilder.CreateBox(
-            "poop",
-            {
-                width: this.chassisWidth,
-                depth: this.chassisLength,
-                height: 0.01
-            },
-            this.scene
-        );
-        poop.position = this.chassisMesh.getAbsolutePosition();
-        poop.position.y = 0;
-        poop.parent = this.game.groundMesh;
+        if(!this.trail) {
+            // we pop out thin flat retangles. highly uncrative
+            const _poop = new MeshBuilder.CreateBox(
+                "poop",
+                {
+                    width: this.chassisWidth,
+                    depth: this.chassisLength,
+                    height: 0.001
+                },
+                this.scene
+            );
+            // Babylon provides just the class for this - insta-trails, just like LSD
+            this.trail = new BABYLON.TrailMesh(
+                'vehicle trail', 
+                _poop, 
+                this.scene, 
+                0.2, 
+                100, 
+                false);
+
+            var sourceMat = new BABYLON.StandardMaterial('sourceMat', this.scene);
+            sourceMat.emissiveColor  = new BABYLON.Color3.Black();
+            sourceMat.specularColor = new BABYLON.Color3.Black();
+            this.trail.material = sourceMat;
+        }
+        this.trail.start();
     }
 
     setupVehicle() {
@@ -507,6 +571,19 @@ export default class Vehicle {
             "KeyN": 'slick',
         };
 
+        const dpadActions: dpadActions = {
+            "up": 'accelerate',
+            "down": 'brake',
+            "left": 'left',
+            "right": 'right',
+            "y": 'up',
+            "a": 'down',
+            "x": 'lside',
+            "b": 'rside',
+            "lb": 'shoot',
+            "rb": 'slick',
+        };
+
         // keydown listener
         window.addEventListener('keydown', (e: any) => {
             if (keysActions[e.code]) {
@@ -520,9 +597,48 @@ export default class Vehicle {
             }
         });
 
+
+        this.gamepadManager = new BABYLON.GamepadManager(this.game.scene);
+        this.gamepadManager.onGamepadConnectedObservable.add((gamepad: any, state: any) => {
+
+            //Xbox button down/up events
+            gamepad.onButtonDownObservable.add((button: any, state: any) => {
+                actions[dpadActions[BABYLON.DualShockDpad[button].toLowercase()]] = true;
+            });
+
+            gamepad.onButtonUpObservable.add((button: any, state: any) => {
+                actions[dpadActions[BABYLON.DualShockDpad[button].toLowercase()]] = false;
+            });
+
+            //Stick events
+            gamepad.onleftstickchanged((values: any) => {
+
+            });
+            gamepad.onrightstickchanged((values: any) => {
+
+            });
+
+            //Triggers events
+            gamepad.onlefttriggerchanged((values: any) => {
+
+            });
+            gamepad.onrighttriggerchanged((values: any) => {
+
+            });
+
+            // pad events
+            gamepad.onPadDownObservable.add((button: any, state: any) => {
+                actions[dpadActions[BABYLON.DualShockDpad[button].toLowercase()]] = true;
+            })
+            gamepad.onPadUpObservable.add((button: any, state: any) => {
+                actions[dpadActions[BABYLON.DualShockDpad[button].toLowercase()]] = false;
+            })
+
+        });
+
         this.scene.registerBeforeRender(() => {
 
-            if (this.ready) {
+            if (this.ready === true) {
 
                 var speed = this.vehicle.getCurrentSpeedKmHour();
                 this.breakingForce = 0;
@@ -607,8 +723,17 @@ export default class Vehicle {
                     this.shoot();
                     actions.shoot = false;
                 } else if (actions.slick) {
+                    this.valveLock = 100;
                     this.poop();
-                    actions.slick = false;
+                    this.scene.onBeforeRenderObservable.add(() => {
+                        this.valveLock--;
+                        if (this.valveLock <=0) {
+                           actions.slick = false;
+                        }
+                    });
+                    if(this.trail) {
+                        this.trail.stop();
+                    }
                 }
 
                 this.vehicle.applyEngineForce(this.engineForce, FRONT_LEFT);
